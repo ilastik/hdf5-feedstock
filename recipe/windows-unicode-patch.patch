@@ -1,0 +1,173 @@
+diff --git a/src/H5FDwindows.c b/src/H5FDwindows.c
+index 76c4f18..ac9a6d3 100644
+--- a/src/H5FDwindows.c
++++ b/src/H5FDwindows.c
+@@ -24,6 +24,118 @@
+ 
+ #ifdef H5_HAVE_WINDOWS
+ 
++const wchar_t *
++H5_get_utf16_str(const char *s)
++{
++    int     nwchars = -1;       /* Length of the UTF-16 buffer */
++    wchar_t *ret_s  = NULL;     /* UTF-16 version of the string */
++
++    /* Get the number of UTF-16 characters needed */
++    if(0 == (nwchars = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0)))
++        goto error;
++
++    /* Allocate a buffer for the UTF-16 string */
++    if(NULL == (ret_s = (wchar_t *)H5MM_calloc(sizeof(wchar_t) * (size_t)nwchars)))
++        goto error;
++
++    /* Convert the input UTF-8 string to UTF-16 */
++    if(0 == MultiByteToWideChar(CP_UTF8, 0, s, -1, ret_s, nwchars))
++        goto error;
++
++    return ret_s;
++
++error:
++    if(ret_s)
++        H5MM_xfree((void *)ret_s);
++    return NULL;
++}   /* end H5_get_utf16_str() */
++
++/*-------------------------------------------------------------------------
++ * Function:     Wopen_utf8
++ *
++ * Purpose:      UTF-8 equivalent of open(2) for use on Windows.
++ *               Converts a UTF-8 input path to UTF-16 and then opens the
++ *               file via _wopen() under the hood
++ *
++ * Return:       Success:    A POSIX file descriptor
++ *               Failure:    -1
++ *
++ * Programmer:  Dana Robinson
++ *              Spring 2019
++ *
++ *-------------------------------------------------------------------------
++ */
++int
++Wopen_utf8(const char *path, int oflag, ...)
++{
++    int fd          = -1;       /* POSIX file descriptor to be returned */
++    wchar_t *wpath  = NULL;     /* UTF-16 version of the path */
++    int pmode       = 0;        /* mode (optionally set via variable args) */
++
++    /* Convert the input UTF-8 path to UTF-16 */
++    if(NULL == (wpath = H5_get_utf16_str(path)))
++        goto done;
++
++    /* _O_BINARY must be set in Windows to avoid CR-LF <-> LF EOL
++    * transformations when performing I/O. Note that this will
++    * produce Unix-style text files, though.
++    */
++    oflag |= _O_BINARY;
++
++    /* Get the mode, if O_CREAT was specified */
++    if(oflag & O_CREAT) {
++        va_list vl;
++
++        HDva_start(vl, oflag);
++        pmode = HDva_arg(vl, int);
++        HDva_end(vl);
++    }
++
++    /* Open the file */
++    fd = _wopen(wpath, oflag, pmode);
++
++done:
++    if(wpath)
++        H5MM_xfree((void *)wpath);
++
++    return fd;
++}   /* end Wopen_utf8() */
++
++/*-------------------------------------------------------------------------
++ * Function:     Wremove_utf8
++ *
++ * Purpose:      UTF-8 equivalent of remove(3) for use on Windows.
++ *               Converts a UTF-8 input path to UTF-16 and then opens the
++ *               file via _wremove() under the hood
++ *
++ * Return:       Success:    0
++ *               Failure:    -1
++ *
++ * Programmer:  Dana Robinson
++ *              Spring 2019
++ *
++ *-------------------------------------------------------------------------
++ */
++int
++Wremove_utf8(const char *path)
++{
++    wchar_t *wpath = NULL;     /* UTF-16 version of the path */
++    int ret;
++
++    /* Convert the input UTF-8 path to UTF-16 */
++    if(NULL == (wpath = H5_get_utf16_str(path)))
++        goto done;
++
++    /* Open the file */
++    ret = _wremove(wpath);
++
++done:
++    if(wpath)
++        H5MM_xfree((void *)wpath);
++
++    return ret;
++}   /* end Wremove_utf8() */
++
+ 
+ /*-------------------------------------------------------------------------
+  * Function:    H5Pset_fapl_windows
+diff --git a/src/H5win32defs.h b/src/H5win32defs.h
+index 4522228..01fccf3 100644
+--- a/src/H5win32defs.h
++++ b/src/H5win32defs.h
+@@ -34,6 +34,7 @@ typedef __int64             h5_stat_size_t;
+ #define HDaccess(F,M)       _access(F,M)
+ #define HDchdir(S)          _chdir(S)
+ #define HDclose(F)          _close(F)
++#define HDcreat(S,M)        Wopen_utf8(S,O_CREAT|O_TRUNC|O_RDWR,M)
+ #define HDdup(F)            _dup(F)
+ #define HDfdopen(N,S)       _fdopen(N,S)
+ #define HDfileno(F)         _fileno(F)
+@@ -54,8 +55,9 @@ typedef __int64             h5_stat_size_t;
+  * Also note that the variadic macro is using a VC++ extension
+  * where the comma is dropped if nothing is passed to the ellipsis.
+  */
+-#define HDopen(S,F,...)       _open(S, F | _O_BINARY, __VA_ARGS__)
++#define HDopen(S,F,...)     Wopen_utf8(S,F,__VA_ARGS__)
+ #define HDread(F,M,Z)       _read(F,M,Z)
++#define HDremove(S)         Wremove_utf8(S)
+ #define HDrmdir(S)          _rmdir(S)
+ #define HDsetvbuf(F,S,M,Z)  setvbuf(F,S,M,(Z>1?Z:2))
+ #define HDsleep(S)          Sleep(S*1000)
+@@ -120,6 +122,9 @@ extern "C" {
+     H5_DLL int c99_vsnprintf(char* str, size_t size, const char* format, va_list ap);
+     H5_DLL int Wnanosleep(const struct timespec *req, struct timespec *rem);
+     H5_DLL herr_t H5_expand_windows_env_vars(char **env_var);
++    H5_DLL const wchar_t *H5_get_utf16_str(const char *s);
++    H5_DLL int Wopen_utf8(const char *path, int oflag, ...);
++    H5_DLL int Wremove_utf8(const char *path);
+ 
+     /* Round functions only needed for VS2012 and earlier.
+      * They are always built to ensure they don't go stale and
+diff --git a/tools/test/perform/sio_engine.c b/tools/test/perform/sio_engine.c
+index 4fead3f..11de229 100644
+--- a/tools/test/perform/sio_engine.c
++++ b/tools/test/perform/sio_engine.c
+@@ -54,6 +54,12 @@
+ } while(0)
+ 
+ /* POSIX I/O macros */
++#ifdef H5_HAVE_WIN32_API
++/* Can't link against the library, so this test will use the older, non-Unicode
++ * _open() call on Windows.
++ */
++#define HDopen(S,F,...)           _open(S, F | _O_BINARY, __VA_ARGS__)
++#endif /* H5_HAVE_WIN32_API */
+ #define POSIXCREATE(fn)           HDopen(fn, O_CREAT|O_TRUNC|O_RDWR, 0600)
+ #define POSIXOPEN(fn, F)          HDopen(fn, F, 0600)
+ #define POSIXCLOSE(F)             HDclose(F)

@@ -32,6 +32,8 @@ source:
     - testh5diff.sh.in.patch  # [mpi != 'nompi']
     # Disable shared Fortran API building on OSX
     - osx_configure.patch  # [osx]
+    # Add unicode patch on windows
+    - windows-unicode-patch.patch  # [win]
 
 build:
   number: {{ build }}
