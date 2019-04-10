@@ -26,6 +26,13 @@ if errorlevel 1 exit 1
 ninja
 if errorlevel 1 exit 1
 
+:: For some reason it is necessary to delete those two DLLs before install
+del %LIBRARY_PREFIX%\bin\msvcp140.dll
+if errorlevel 1 exit 1
+
+del %LIBRARY_PREFIX%\bin\vcruntime140.dll
+if errorlevel 1 exit 1
+
 :: Install step.
 ninja install
 if errorlevel 1 exit 1
