@@ -3,11 +3,10 @@ cd build
 
 :: Set environment variables.
 set HDF5_EXT_ZLIB=zlib.lib
-
 set "CXXFLAGS=%CXXFLAGS% -LTCG"
 
 :: Configure step.
-cmake -G "Ninja" ^
+cmake -G "NMake Makefiles" ^
       -D CMAKE_BUILD_TYPE:STRING=RELEASE ^
       -D CMAKE_PREFIX_PATH:PATH=%LIBRARY_PREFIX% ^
       -D CMAKE_INSTALL_PREFIX:PATH=%LIBRARY_PREFIX% ^
@@ -23,7 +22,7 @@ cmake -G "Ninja" ^
 if errorlevel 1 exit 1
 
 :: Build C libraries and tools.
-ninja
+nmake all
 if errorlevel 1 exit 1
 
 :: For some reason it is necessary to delete those two DLLs before install
@@ -34,5 +33,5 @@ del %LIBRARY_PREFIX%\bin\vcruntime140.dll
 if errorlevel 1 exit 1
 
 :: Install step.
-ninja install
+nmake install
 if errorlevel 1 exit 1
